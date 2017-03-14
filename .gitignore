@@ -13,6 +13,8 @@ target/
 .classpath
 .settings
 .scala_dependencies
+/bin/
+/.cache-tests
 
 # Emacs
 *~
