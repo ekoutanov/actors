@@ -23,15 +23,23 @@ import scala.concurrent.{forkjoin => scfj}
 
 object Actor {
   type Behavior = Any => Effect
+  
   sealed trait Effect extends (Behavior => Behavior)
+  
   case object Stay extends Effect { def apply(old: Behavior): Behavior = old }
+  
   case class Become(like: Behavior) extends Effect { def apply(old: Behavior): Behavior = like }
+  
   case object Die extends Effect { def apply(old: Behavior): Behavior = msg => sys.error("Dropping of message due to severe case of death: " + msg) }
+  
   trait Address { def !(a: Any): Unit } // The notion of an Address to where you can post messages to
+  
   def apply(initial: Address => Behavior, batch: Int = 5)(implicit e: Executor): Address = // Seeded by the self-reference that yields the initial behavior
     new AtomicReference[AnyRef]((self: Address) => Become(initial(self))) with Address { // Memory visibility of behavior is guarded by volatile piggybacking or provided by executor
       this ! this // Make the actor self aware by seeding its address to the initial behavior
+      
       def !(a: Any): Unit = { val n = new Node(a); getAndSet(n) match { case h: Node => h.lazySet(n); case b => async(b.asInstanceOf[Behavior], n, true) } } // Enqueue the message onto the mailbox and schedule for execution if the actor was suspended
+      
       private def async(b: Behavior, n: Node, x: Boolean): Unit = e match {
         case p: scfj.ForkJoinPool => p.execute(new scfj.ForkJoinTask[Unit] {
           def exec(): Boolean = { tryAct(b, n, x); false }
@@ -45,11 +53,40 @@ object Actor {
         })
         case p => p.execute(new Runnable { def run(): Unit = tryAct(b, n, x) })
       }
-      private def tryAct(b: Behavior, n: Node, x: Boolean): Unit = if (x) act(b, n, batch) else if ((n ne get) || !compareAndSet(n, b)) actOrAsync(b, n, 0) // Act or suspend or stop
-      @tailrec private def actOrAsync(b: Behavior, n: Node, i: Int): Unit = { val n1 = n.get; if (n1 ne null) act(b, n1, batch) else if (i != 9999) actOrAsync(b, n, i + 1) else { Thread.`yield`(); async(b, n, false) } } // Spin for submit completion then act or suspend
-      @tailrec private def act(b: Behavior, n: Node, i: Int): Unit = { val b1 = try b(n.a)(b) catch { case t: Throwable => asyncAndRethrow(b, n, t) }; val n1 = n.get; if (n1 ne null) { if (i > 0) act(b1, n1, i - 1) else { n.lazySet(null); async(b1, n1, true) } } else async(b1, n, false) } // Reduce messages to behaviour in batch loop then suspend
-      private def asyncAndRethrow(b: Behavior, n: Node, t: Throwable): Nothing = { async(b, n, false); val ct = Thread.currentThread(); if (t.isInstanceOf[InterruptedException]) ct.interrupt(); ct.getUncaughtExceptionHandler.uncaughtException(ct, t); throw t }
+      
+      private def tryAct(b: Behavior, n: Node, x: Boolean): Unit = {
+        if (x) act(b, n, batch) else if ((n ne get) || !compareAndSet(n, b)) actOrAsync(b, n, 0) // Act or suspend or stop
+      }
+      
+      @tailrec private def actOrAsync(b: Behavior, n: Node, i: Int): Unit = { 
+        val n1 = n.get; if (n1 ne null) act(b, n1, batch) else if (i != 9999) actOrAsync(b, n, i + 1) else { Thread.`yield`(); async(b, n, false) } 
+      } // Spin for submit completion then act or suspend
+      
+      @tailrec private def act(b: Behavior, n: Node, i: Int): Unit = { 
+        val b1 = try {
+          b(n.a)(b) 
+        } catch { 
+          case t: Throwable => asyncAndRethrow(b, n, t) 
+        }; 
+        val n1 = n.get; 
+        if (n1 ne null) { 
+          if (i > 0) act(b1, n1, i - 1) 
+          else { n.lazySet(null); async(b1, n1, true) } 
+        } else {
+          async(b1, n, false) 
+        }
+      } // Reduce messages to behaviour in batch loop then suspend
+      
+      private def asyncAndRethrow(b: Behavior, n: Node, t: Throwable): Nothing = { 
+        async(b, n, false)
+        val ct = Thread.currentThread(); 
+        if (t.isInstanceOf[InterruptedException]) 
+          ct.interrupt(); 
+        ct.getUncaughtExceptionHandler.uncaughtException(ct, t); 
+        throw t 
+      }
     }
+  
   private class Node(val a: Any) extends AtomicReference[Node]
 }
 
