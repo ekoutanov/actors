@@ -38,7 +38,18 @@ object Actor {
     new AtomicReference[AnyRef]((self: Address) => Become(initial(self))) with Address { // Memory visibility of behavior is guarded by volatile piggybacking or provided by executor
       this ! this // Make the actor self aware by seeding its address to the initial behavior
       
-      def !(a: Any): Unit = { val n = new Node(a); getAndSet(n) match { case h: Node => h.lazySet(n); case b => async(b.asInstanceOf[Behavior], n, true) } } // Enqueue the message onto the mailbox and schedule for execution if the actor was suspended
+      def !(a: Any): Unit = {
+        val n = new Node(a)
+        val h = getAndSet(n) 
+        h match { 
+          case h: Node => {
+            h.lazySet(n)
+          }
+          case b => {
+            async(b.asInstanceOf[Behavior], n, true) 
+          }
+        } 
+      } // Enqueue the message onto the mailbox and schedule for execution if the actor was suspended
       
       private def async(b: Behavior, n: Node, x: Boolean): Unit = e match {
         case p: scfj.ForkJoinPool => p.execute(new scfj.ForkJoinTask[Unit] {
@@ -51,15 +62,28 @@ object Actor {
           def getRawResult: Unit = ()
           def setRawResult(unit: Unit): Unit = ()
         })
-        case p => p.execute(new Runnable { def run(): Unit = tryAct(b, n, x) })
+        case p => p.execute(new Runnable { override def run(): Unit = tryAct(b, n, x) })
       }
       
+      // called from the FJ task
       private def tryAct(b: Behavior, n: Node, x: Boolean): Unit = {
-        if (x) act(b, n, batch) else if ((n ne get) || !compareAndSet(n, b)) actOrAsync(b, n, 0) // Act or suspend or stop
+        if (x) {
+          act(b, n, batch) 
+        } else if ((n ne get) || !compareAndSet(n, b)) {
+          actOrAsync(b, n, 0) // Act or suspend or stop
+        }
       }
       
       @tailrec private def actOrAsync(b: Behavior, n: Node, i: Int): Unit = { 
-        val n1 = n.get; if (n1 ne null) act(b, n1, batch) else if (i != 9999) actOrAsync(b, n, i + 1) else { Thread.`yield`(); async(b, n, false) } 
+        val n1 = n.get
+        if (n1 ne null) {
+          act(b, n1, batch) 
+        } else if (i != 9999) {
+          actOrAsync(b, n, i + 1) 
+        } else { 
+          Thread.`yield`()
+          async(b, n, false) 
+        } 
       } // Spin for submit completion then act or suspend
       
       @tailrec private def act(b: Behavior, n: Node, i: Int): Unit = { 
@@ -67,11 +91,16 @@ object Actor {
           b(n.a)(b) 
         } catch { 
           case t: Throwable => asyncAndRethrow(b, n, t) 
-        }; 
-        val n1 = n.get; 
+        }
+        
+        val n1 = n.get
         if (n1 ne null) { 
-          if (i > 0) act(b1, n1, i - 1) 
-          else { n.lazySet(null); async(b1, n1, true) } 
+          if (i > 0) {
+            act(b1, n1, i - 1) 
+          } else { 
+            n.lazySet(null) // for GC
+            async(b1, n1, true) 
+          } 
         } else {
           async(b1, n, false) 
         }
@@ -79,10 +108,10 @@ object Actor {
       
       private def asyncAndRethrow(b: Behavior, n: Node, t: Throwable): Nothing = { 
         async(b, n, false)
-        val ct = Thread.currentThread(); 
+        val ct = Thread.currentThread()
         if (t.isInstanceOf[InterruptedException]) 
-          ct.interrupt(); 
-        ct.getUncaughtExceptionHandler.uncaughtException(ct, t); 
+          ct.interrupt()
+        ct.getUncaughtExceptionHandler.uncaughtException(ct, t)
         throw t 
       }
     }
