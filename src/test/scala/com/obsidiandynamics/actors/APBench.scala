@@ -8,7 +8,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 object APBench {
-  private def send(address: Address, messages: Int) = {
+  private def send(address: Address, messages: Long) = {
     val m = Message()
     var i = messages
     while (i > 0) {
@@ -17,7 +17,7 @@ object APBench {
     }
   }
   
-  private def countingActor(messages: Int, e: Executor, latch: CountDownLatch): Address = {
+  private def countingActor(messages: Long, e: Executor, latch: CountDownLatch): Address = {
     Actor(_ => {
       var i = messages
       _: Any =>
@@ -33,12 +33,13 @@ object APBench {
     println("bench started")
     
     val threads = Runtime.getRuntime().availableProcessors()
-    val executor = Executors.newWorkStealingPool(threads)
-    val n = 200000000
+    val actors = threads * 1;
+    val executor = Executors.newWorkStealingPool(actors)
+    val n: Long = 400000000
     
-    val latch = new CountDownLatch(threads)
+    val latch = new CountDownLatch(actors)
     var took = timed(() => {
-      for (t <- 1 to threads) {
+      for (t <- 1 to actors) {
         new Thread() {
           override def run = {
             val a = countingActor(n, executor, latch)
@@ -47,14 +48,12 @@ object APBench {
         }.start()
       }
 
-      try {
-        latch.await()
-      } catch {case e: Exception => {}}
+      latch.await()
     })
 
     executor.shutdown()
     
-    printf("%,d took %,d s, %,d ops/sec\n", threads * n, took / 1000, threads * n / took * 1000)
+    printf("%,d took %,d s, %,d ops/sec\n", actors * n, took / 1000, actors * n / took * 1000)
   }
   
   private def timed(r: () => Unit): Long = {
