@@ -1,34 +1,43 @@
 package com.obsidiandynamics.actors
 
-import com.github.plokhotnyuk.actors.Message
-import com.github.gist.viktorklang.Actor._
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executor
 import java.util.concurrent.Executors
-import com.github.gist.viktorklang.Actor
+import java.util.concurrent.ForkJoinPool
 
-object APBench {
+import com.github.plokhotnyuk.actors.Message
+import com.obsidiandynamics.indigo.benchmark
+import com.obsidiandynamics.indigo.benchmark.APActor._
+import com.obsidiandynamics.indigo.benchmark.APActor
+import com.obsidiandynamics.indigo.benchmark.APActor.Func
+
+
+object APJavaBench {
   private def send(address: Address, messages: Long) = {
     val m = Message()
     var i = messages
     while (i > 0) {
-      address ! m
+      address.tell(m)
       i -= 1
     }
   }
   
   private class Counter(var i: Long)
   
-  private def countingActor(messages: Long, e: Executor, latch: CountDownLatch): Address = {
-    Actor(_ => {
-      var c = new Counter(messages)
-      _: Any =>
-        c.i -= 1
-        if (c.i == 0) {
-          latch.countDown()
+  private def countingActor(messages: Long, e: ForkJoinPool, latch: CountDownLatch): Address = {
+    APActor.create(new Object() with Func[Address, Behavior] {
+      override def apply(addr: Address): Behavior = {
+        var c = new Counter(messages)
+        new Object() with Behavior {
+          override def apply(m: Object): Effect = {
+            c.i -= 1
+            if (c.i == 0) {
+              latch.countDown()
+            }
+            APActor.stay
+          }
         }
-        Stay
-    }, batch = 1000)(e)
+      }
+    }, e, 1000);
   }
   
   def main(args: Array[String]) = {
@@ -36,7 +45,7 @@ object APBench {
     
     val threads = Runtime.getRuntime().availableProcessors()
     val actors = threads * 1;
-    val executor = Executors.newWorkStealingPool(actors)
+    val executor = Executors.newWorkStealingPool(actors).asInstanceOf[ForkJoinPool]
     val n: Long = 200000000
     
     val latch = new CountDownLatch(actors)

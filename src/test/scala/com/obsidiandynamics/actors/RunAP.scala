@@ -1,7 +1,7 @@
 package com.obsidiandynamics.actors
 
-import com.github.gist.viktorklang.Actor
 import java.util.concurrent.Executors
+import com.github.gist.viktorklang.Actor
 
 object RunAP {
   def main(args: Array[String]) = {

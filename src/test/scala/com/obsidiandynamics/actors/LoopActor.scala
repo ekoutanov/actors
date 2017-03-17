@@ -1,4 +1,5 @@
-package com.github.gist.viktorklang
+package com.obsidiandynamics.actors
+
 /*
    Copyright 2012 Viktor Klang
 
@@ -20,8 +21,9 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent._
 import scala.annotation.tailrec
 import scala.concurrent.{forkjoin => scfj}
+import scala.concurrent.{forkjoin => scfj}
 
-object Actor {
+object LoopActor {
   type Behavior = Any => Effect
   
   sealed trait Effect extends (Behavior => Behavior)
@@ -123,12 +125,6 @@ object Actor {
   
   private class Node(val a: Any) extends AtomicReference[Node]
   
-}
-
-class Actor {
-  def create(initial: Function[Object, Object], e: Executor, batch: Int) = {
-    //Actor(initial, batch)(e)
-  }
 }
 
 //Usage example that creates an actor that will, after it's first message is received, Die

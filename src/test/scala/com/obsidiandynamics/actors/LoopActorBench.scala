@@ -1,13 +1,15 @@
 package com.obsidiandynamics.actors
 
-import com.github.plokhotnyuk.actors.Message
-import com.github.gist.viktorklang.Actor._
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
-import com.github.gist.viktorklang.Actor
 
-object APBench {
+import com.obsidiandynamics.actors.LoopActor._
+import com.github.plokhotnyuk.actors.Message
+
+
+
+object LoopActorBench {
   private def send(address: Address, messages: Long) = {
     val m = Message()
     var i = messages
@@ -20,14 +22,14 @@ object APBench {
   private class Counter(var i: Long)
   
   private def countingActor(messages: Long, e: Executor, latch: CountDownLatch): Address = {
-    Actor(_ => {
+    LoopActor(_ => {
       var c = new Counter(messages)
       _: Any =>
         c.i -= 1
         if (c.i == 0) {
           latch.countDown()
         }
-        Stay
+        LoopActor.Stay
     }, batch = 1000)(e)
   }
   
