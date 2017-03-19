@@ -1,4 +1,5 @@
-package com.github.gist.viktorklang
+package com.obsidiandynamics.actors
+
 /*
    Copyright 2012 Viktor Klang
 
@@ -20,8 +21,9 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent._
 import scala.annotation.tailrec
 import scala.concurrent.{forkjoin => scfj}
+import scala.concurrent.{forkjoin => scfj}
 
-object Actor {
+object LoopActor2 {
   type Behavior = Any => Effect
   
   sealed trait Effect extends (Behavior => Behavior)
@@ -37,7 +39,7 @@ object Actor {
   def apply(initial: Address => Behavior, batch: Int = 5)(implicit e: Executor): Address = // Seeded by the self-reference that yields the initial behavior
     new AtomicReference[AnyRef]((self: Address) => Become(initial(self))) with Address { // Memory visibility of behavior is guarded by volatile piggybacking or provided by executor
       this ! this // Make the actor self aware by seeding its address to the initial behavior
-      
+  
       def !(a: Any): Unit = {
         val n = new Node(a)
         val h = getAndSet(n) 
@@ -69,43 +71,61 @@ object Actor {
       private def tryAct(b: Behavior, n: Node, x: Boolean): Unit = {
         if (x) {
           act(b, n, batch) 
-        } else if ((n ne get) || !compareAndSet(n, b)) {
+        } else if (/*(n ne get) || */!compareAndSet(n, b)) {
           actOrAsync(b, n, 0) // Act or suspend or stop
         }
       }
       
-      @tailrec private def actOrAsync(b: Behavior, n: Node, i: Int): Unit = { 
-        val n1 = n.get
-        if (n1 ne null) {
-          act(b, n1, batch) 
-        } else if (i != 9999) {
-          actOrAsync(b, n, i + 1) 
-        } else { 
-          Thread.`yield`()
-          async(b, n, false) 
-        } 
+      private def actOrAsync(b: Behavior, n: Node, i: Int): Unit = { 
+        var _b = b
+        var _n = n
+        var _i = i
+        
+        while (true) {
+          val n1 = _n.get
+          if (n1 ne null) {
+            act(_b, n1, batch) 
+            return
+          } else if (_i != 9999) {
+            _i += 1
+            // continue actOrAsync(b, n, i + 1) 
+          } else { 
+            Thread.`yield`()
+            async(_b, _n, false) 
+            return
+          } 
+        }
       } // Spin for submit completion then act or suspend
       
-      @tailrec private def act(b: Behavior, n: Node, i: Int): Unit = { 
-        val b1 = try {
-          b(n.a)(b) 
-        } catch { 
-          case t: Throwable => asyncAndRethrow(b, n, t) 
-        }
-        
-        val n1 = n.get
-        if (n1 ne null) { 
-          if (i > 0) {
-            act(b1, n1, i - 1) 
-          } else { 
-            n.lazySet(null) // for GC (orig)
-            async(b1, n1, true) 
-          } 
-        } else { // no more elements observed... wrap up
-          async(b1, n, false) //<- original (other lines in this block added)
-//          if (!compareAndSet(n, b1)) {
-//            actOrAsync(b1, n, 0) // Act or suspend or stop
-//          }
+      private def act(b: Behavior, n: Node, i: Int): Unit = { 
+        var _b = b
+        var _n = n
+        var _i = i
+        while (true) {
+          val b1 = try {
+            _b(_n.a)(_b) 
+          } catch { 
+            case t: Throwable => asyncAndRethrow(_b, _n, t) 
+          }
+          
+          val n1 = _n.get
+          if (n1 ne null) { 
+            if (_i > 0) {
+              _b = b1; _n = n1; _i = _i - 1
+              // continue act(b1, n1, i - 1) 
+            } else { 
+              //_n.lazySet(null) // for GC (orig)
+              async(b1, n1, true)
+              return
+            } 
+          } else { // no more elements observed... wrap up
+            async(b1, n, false) //<- original (other lines in this block added)
+//            if (!compareAndSet(_n, b1)) {
+//              //actOrAsync(b1, _n, 0) // Act or suspend or stop
+//              async(b1, n, false) 
+//            }
+            return
+          }
         }
       } // Reduce messages to behaviour in batch loop then suspend
       
@@ -120,13 +140,6 @@ object Actor {
     }
   
   private class Node(val a: Any) extends AtomicReference[Node]
-  
-}
-
-class Actor {
-  def create(initial: Function[Object, Object], e: Executor, batch: Int) = {
-    //Actor(initial, batch)(e)
-  }
 }
 
 //Usage example that creates an actor that will, after it's first message is received, Die

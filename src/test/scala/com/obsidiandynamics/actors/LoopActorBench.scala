@@ -55,9 +55,9 @@ object LoopActorBench {
       latch.await()
     })
 
-    executor.shutdown()
     
     printf("%,d took %,d s, %,d ops/sec\n", actors * n, took / 1000, actors * n / took * 1000)
+    executor.shutdown()
   }
   
   private def timed(r: () => Unit): Long = {
