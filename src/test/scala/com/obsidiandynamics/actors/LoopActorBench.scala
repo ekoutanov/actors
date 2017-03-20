@@ -4,7 +4,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
-import com.obsidiandynamics.actors.LoopActor._
+import com.obsidiandynamics.actors.{LoopActor => LA}
+import LA.Address
 import com.github.plokhotnyuk.actors.Message
 
 
@@ -14,6 +15,7 @@ object LoopActorBench {
     val m = Message()
     var i = messages
     while (i > 0) {
+      //if (i % 1000 == 0) println(s"Told $i")
       address ! m
       i -= 1
     }
@@ -22,14 +24,15 @@ object LoopActorBench {
   private class Counter(var i: Long)
   
   private def countingActor(messages: Long, e: Executor, latch: CountDownLatch): Address = {
-    LoopActor(_ => {
+    LA(_ => {
       var c = new Counter(messages)
       _: Any =>
         c.i -= 1
+        //if (c.i % 1000 == 0) println(s"Actor ${System.identityHashCode(this)} value ${c.i} thread=${Thread.currentThread().getName()}")
         if (c.i == 0) {
           latch.countDown()
         }
-        LoopActor.Stay
+        LA.Stay
     }, batch = 1000)(e)
   }
   
@@ -39,6 +42,7 @@ object LoopActorBench {
     val threads = Runtime.getRuntime().availableProcessors()
     val actors = threads * 1;
     val executor = Executors.newWorkStealingPool(actors)
+//    val executor = Executors.newFixedThreadPool(actors)
     val n: Long = 200000000
     
     val latch = new CountDownLatch(actors)

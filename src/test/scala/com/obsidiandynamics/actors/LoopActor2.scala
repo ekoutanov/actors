@@ -119,10 +119,10 @@ object LoopActor2 {
               return
             } 
           } else { // no more elements observed... wrap up
-            async(b1, n, false) //<- original (other lines in this block added)
+            async(b1, _n, false) //<- original (other lines in this block added)
 //            if (!compareAndSet(_n, b1)) {
 //              //actOrAsync(b1, _n, 0) // Act or suspend or stop
-//              async(b1, n, false) 
+//              async(b1, _n, false) 
 //            }
             return
           }

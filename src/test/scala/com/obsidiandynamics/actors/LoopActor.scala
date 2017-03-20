@@ -22,6 +22,7 @@ import java.util.concurrent._
 import scala.annotation.tailrec
 import scala.concurrent.{forkjoin => scfj}
 import scala.concurrent.{forkjoin => scfj}
+import java.util.concurrent.atomic.AtomicLong
 
 object LoopActor {
   type Behavior = Any => Effect
@@ -38,25 +39,28 @@ object LoopActor {
   
   
   private val ANCHOR = new Node(null)
-  def apply(initial: Address => Behavior, batch: Int = 5)(implicit e: Executor): Address = // Seeded by the self-reference that yields the initial behavior
+  def apply(initial: Address => Behavior, batch: Int = 5)(implicit e: Executor): Address = {// Seeded by the self-reference that yields the initial behavior
+//    var behavior: Behavior = (m: Any) => {
+//      if (m.isInstanceOf[Address]) {
+//        //println("Handling address")
+//        Become(initial.apply(m.asInstanceOf[Address]))
+//      } else {
+//        Stay
+//      }
+//    }
+    
+    val behavior = initial.apply(null)
+    
     new AtomicReference[AnyRef](ANCHOR) with Address { // Memory visibility of behavior is guarded by volatile piggybacking or provided by executor
-      this ! this // Make the actor self aware by seeding its address to the initial behavior
-      
-      val behavior = (m: Any) => {
-        if (m.isInstanceOf[Address]) {
-          Become(initial.apply(m.asInstanceOf[Address]))
-        } else {
-          Stay
-        }
-      }
-      
+      //this ! this // Make the actor self aware by seeding its address to the initial behavior
+
       def !(a: Any): Unit = {
         val n = new Node(a)
         val h = getAndSet(n) 
         if (h ne ANCHOR) {
           h.asInstanceOf[Node].lazySet(n)
         } else {
-          println(s"behavior=$behavior")
+          //println("Scheduling")
           async(behavior, n, true) 
         }
 //        h match { 
@@ -85,12 +89,20 @@ object LoopActor {
       
       // called from the FJ task
       private def tryAct(b: Behavior, n: Node, x: Boolean): Unit = {
-        if (x) {
-          act(b, n, batch) 
-        } else if (/*(n ne get) || */!compareAndSet(n, ANCHOR)) {
-          actOrAsync(b, n, 0) // Act or suspend or stop
+        try {
+          if (x) {
+            act(b, n, batch) 
+          } else if (/*(n ne get) || */!compareAndSet(n, ANCHOR)) {
+            //println("Retry park")
+            actOrAsync(b, n, 0) // Act or suspend or stop
+          } else {
+            //println("Parked")
+          }
+        } catch {
+          case t: Throwable => t.printStackTrace()
         }
       }
+      
       
       private def actOrAsync(b: Behavior, n: Node, i: Int): Unit = { 
         var _b = b
@@ -107,22 +119,30 @@ object LoopActor {
             // continue actOrAsync(b, n, i + 1) 
           } else { 
             Thread.`yield`()
+            //println("async1")
             async(_b, _n, false) 
             return
           } 
         }
       } // Spin for submit completion then act or suspend
       
+      
+      //var r = 0: Long
       private def act(b: Behavior, n: Node, i: Int): Unit = { 
         var _b = b
         var _n = n
         var _i = i
+        
         while (true) {
-          val b1 = try {
+          val b1: Behavior = try {
+            //r = resolved.incrementAndGet()
+            //r += 1
+            //if (r % 1000 == 0) println(s"Resolved $r")
             _b(_n.a)(_b) 
           } catch { 
             case t: Throwable => asyncAndRethrow(_b, _n, t) 
           }
+          //if (i == batch) behavior = b1
           
           val n1 = _n.get
           if (n1 ne null) { 
@@ -131,14 +151,16 @@ object LoopActor {
               // continue act(b1, n1, i - 1) 
             } else { 
               //_n.lazySet(null) // for GC (orig)
+              //println("async2")
               async(b1, n1, true)
               return
             } 
           } else { // no more elements observed... wrap up
-            async(b1, n, false) //<- original (other lines in this block added)
+            //println(s"async3 ${_i} ${_n.a} r=$r")
+            async(b1, _n, false) //<- original (other lines in this block added)
 //            if (!compareAndSet(_n, b1)) {
 //              //actOrAsync(b1, _n, 0) // Act or suspend or stop
-//              async(b1, n, false) 
+//              //async(b1, _n, false) 
 //            }
             return
           }
@@ -154,6 +176,7 @@ object LoopActor {
         throw t 
       }
     }
+  }
   
   private class Node(val a: Any) extends AtomicReference[Node]
 }
