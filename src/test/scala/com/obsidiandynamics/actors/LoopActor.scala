@@ -37,18 +37,8 @@ object LoopActor {
   
   trait Address { def !(a: Any): Unit } // The notion of an Address to where you can post messages to
   
-  
   private val ANCHOR = new Node(null)
   def apply(initial: Address => Behavior, batch: Int = 5)(implicit e: Executor): Address = {// Seeded by the self-reference that yields the initial behavior
-//    var behavior: Behavior = (m: Any) => {
-//      if (m.isInstanceOf[Address]) {
-//        //println("Handling address")
-//        Become(initial.apply(m.asInstanceOf[Address]))
-//      } else {
-//        Stay
-//      }
-//    }
-    
     val behavior = initial.apply(null)
     
     new AtomicReference[AnyRef](ANCHOR) with Address { // Memory visibility of behavior is guarded by volatile piggybacking or provided by executor
@@ -63,14 +53,6 @@ object LoopActor {
           //println("Scheduling")
           async(behavior, n, true) 
         }
-//        h match { 
-//          case h: Node => {
-//            h.lazySet(n)
-//          }
-//          case b => {
-//            async(b.asInstanceOf[Behavior], n, true) 
-//          }
-//        } 
       } // Enqueue the message onto the mailbox and schedule for execution if the actor was suspended
       
       private def async(b: Behavior, n: Node, x: Boolean): Unit = e match {
@@ -114,13 +96,16 @@ object LoopActor {
           if (n1 ne null) {
             act(_b, n1, batch) 
             return
-          } else if (_i != 9999) {
+          } else if (_i != 9) {
             _i += 1
             // continue actOrAsync(b, n, i + 1) 
           } else { 
-            Thread.`yield`()
+            Thread.`yield`() //<
             //println("async1")
-            async(_b, _n, false) 
+            //async(_b, _n, false) 
+            if (!compareAndSet(_n, ANCHOR)) {
+              async(_b, _n, false) 
+            }
             return
           } 
         }
@@ -157,11 +142,11 @@ object LoopActor {
             } 
           } else { // no more elements observed... wrap up
             //println(s"async3 ${_i} ${_n.a} r=$r")
-            async(b1, _n, false) //<- original (other lines in this block added)
-//            if (!compareAndSet(_n, b1)) {
-//              //actOrAsync(b1, _n, 0) // Act or suspend or stop
-//              //async(b1, _n, false) 
-//            }
+            Thread.`yield`()
+            //async(b1, _n, false) //<- original (other lines in this block added)
+            if (!compareAndSet(_n, ANCHOR)) {
+              async(b1, _n, false) 
+            }
             return
           }
         }

@@ -40,9 +40,7 @@ object APJavaBench {
     }, e, 1000);
   }
   
-  def main(args: Array[String]) = {
-    println("bench started")
-    
+  private def benchmark() = {
     val threads = Runtime.getRuntime().availableProcessors()
     val actors = threads * 1;
     val executor = Executors.newWorkStealingPool(actors).asInstanceOf[ForkJoinPool]
@@ -65,6 +63,14 @@ object APJavaBench {
     executor.shutdown()
     
     printf("%,d took %,d s, %,d ops/sec\n", actors * n, took / 1000, actors * n / took * 1000)
+  }
+  
+  def main(args: Array[String]) = {
+    println("bench started")
+    for (i <- 1 to 5) {
+      System.gc()
+      benchmark()
+    }
   }
   
   private def timed(r: () => Unit): Long = {

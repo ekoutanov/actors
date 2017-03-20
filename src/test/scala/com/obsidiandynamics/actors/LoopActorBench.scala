@@ -16,6 +16,7 @@ object LoopActorBench {
     var i = messages
     while (i > 0) {
       //if (i % 1000 == 0) println(s"Told $i")
+      if (i % 100000000 == 0) Thread.`yield`()
       address ! m
       i -= 1
     }
@@ -36,9 +37,7 @@ object LoopActorBench {
     }, batch = 1000)(e)
   }
   
-  def main(args: Array[String]) = {
-    println("bench started")
-    
+  private def benchmark() = {
     val threads = Runtime.getRuntime().availableProcessors()
     val actors = threads * 1;
     val executor = Executors.newWorkStealingPool(actors)
@@ -62,6 +61,14 @@ object LoopActorBench {
     
     printf("%,d took %,d s, %,d ops/sec\n", actors * n, took / 1000, actors * n / took * 1000)
     executor.shutdown()
+  }
+  
+  def main(args: Array[String]) = {
+    println("bench started")
+    for (i <- 1 to 5) {
+      System.gc()
+      benchmark()
+    }
   }
   
   private def timed(r: () => Unit): Long = {
