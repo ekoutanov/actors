@@ -59,7 +59,7 @@ object APBench {
   
   def main(args: Array[String]) = {
     println("bench started")
-    for (i <- 1 to 25) {
+    for (i <- 1 to 5) {
       System.gc()
       benchmark()
     }
